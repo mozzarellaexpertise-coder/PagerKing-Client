@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PagerKing</string>
+    <string name="title_activity_main">PagerKing</string>
+    <string name="package_name">com.pagerking.app</string>
+    <string name="custom_url_scheme">com.pagerking.app</string>
+</resources>
