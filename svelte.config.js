@@ -1,18 +1,9 @@
-import adapter from '@sveltejs/adapter-static';
+import adapter from '@sveltejs/adapter-auto';
 import preprocess from 'svelte-preprocess';
 
-/** @type {import('@sveltejs/kit').Config} */
-const config = {
+export default {
   preprocess: preprocess(),
-
   kit: {
-    // Use static adapter for SPA + Capacitor
-    adapter: adapter({
-      pages: 'build',        // output folder
-      assets: 'build',       // static assets
-      fallback: 'index.html' // required for SPA routing
-    })
+    adapter: adapter(),
   }
 };
-
-export default config;
