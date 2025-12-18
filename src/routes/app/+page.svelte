@@ -14,7 +14,7 @@
   let newMessage = '';
   let recipientId: string | null = null;
   let users: { id: string; email: string }[] = [];
-  let currentUser: { id: string; email: string; id: string } | null = null;
+  let currentUser: { id: string; email: string } | null = null;
 
   let loading = true;
   let messagesContainer: HTMLDivElement;
@@ -50,12 +50,13 @@
       .order('created_at', { ascending: true });
 
     if (!error && data) {
-messages.map(msg => ({
-  id: msg.id,
-  text: msg.text,
-  sender: msg.sender_name,
-  receiver_id: msg.receiver_id
-}));
+      messages = data.map(m => ({
+        id: m.id,
+        text: m.text,
+        created_at: m.created_at,
+        sender_email: m.sender.email,
+        receiver_email: m.receiver ? m.receiver.email : 'All'
+      }));
     }
   };
 
