@@ -50,13 +50,12 @@
       .order('created_at', { ascending: true });
 
     if (!error && data) {
-      messages = data.map(msg => ({
-        id: msg.id,
-        text: msg.text,
-        sender_email: msg.sender.email,
-        receiver_email: msg.receiver?.email || 'All',
-        created_at: msg.created_at
-      }));
+messages.map(msg => ({
+  id: msg.id,
+  text: msg.text,
+  sender: msg.sender_name,
+  receiver_id: msg.receiver_id
+}));
     }
   };
 
