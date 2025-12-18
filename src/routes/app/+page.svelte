@@ -49,16 +49,17 @@
       .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id},receiver_id.is.null`)
       .order('created_at', { ascending: true });
 
-    if (!error && data) {
-      messages = data.map(m => ({
-        id: m.id,
-        text: m.text,
-        created_at: m.created_at,
-        sender_email: m.sender.email,
-        receiver_email: m.receiver ? m.receiver.email : 'All'
-      }));
-    }
-  };
+
+if (!error && data) {
+  messages = data.map(msg => ({
+    id: msg.id,
+    text: msg.text,
+    sender_email: msg.sender?.email ?? 'Unknown',
+    receiver_email: msg.receiver?.email ?? 'All',
+    created_at: msg.created_at
+  }));
+}
+  
 
   // Send message
   const sendMessage = async () => {
