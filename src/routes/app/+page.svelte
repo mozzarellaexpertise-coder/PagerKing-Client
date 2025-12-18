@@ -15,29 +15,43 @@
   let recipientId: string | null = null;
   let users: { id: string; email: string }[] = [];
   let currentUser: { id: string; email: string } | null = null;
+
   let loading = true;
   let messagesContainer: HTMLDivElement;
 
-  // Fetch logged-in user's profile
+  // Fetch logged-in user and ensure profile exists
   const fetchCurrentUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (!user || userError) return;
 
+    // Check if profile exists
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id,email')
+      .select('id,name')
       .eq('id', user.id)
       .single();
 
-    if (profile) currentUser = { id: profile.id, email: profile.email };
+    // If no profile, create it
+    if (!profile) {
+      const { data: newProfile, error: insertError } = await supabase
+        .from('profiles')
+        .insert([{ id: user.id, name: user.email }])
+        .select()
+        .single();
+
+      if (insertError) console.error('Failed to create profile:', insertError.message);
+      currentUser = { id: newProfile.id, email: user.email };
+    } else {
+      currentUser = { id: profile.id, email: user.email };
+    }
   };
 
-  // Fetch all profiles for recipient dropdown
+  // Fetch all users for recipient dropdown
   const fetchUsers = async () => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id,email');
-    if (!error && data) users = data;
+      .select('id,name');
+    if (!error && data) users = data.filter(u => u.id !== currentUser?.id);
   };
 
   // Fetch messages relevant to current user
@@ -52,8 +66,8 @@
         created_at,
         sender_id,
         receiver_id,
-        sender:sender_id(email),
-        receiver:receiver_id(email)
+        sender:sender_id ( name ),
+        receiver:receiver_id ( name )
       `)
       .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id},receiver_id.is.null`)
       .order('created_at', { ascending: true });
@@ -62,8 +76,8 @@
       messages = data.map((msg: any) => ({
         id: msg.id,
         text: msg.text,
-        sender_email: msg.sender?.email,
-        receiver_email: msg.receiver?.email || 'All',
+        sender_email: msg.sender?.name || 'Unknown',
+        receiver_email: msg.receiver?.name || 'All',
         created_at: msg.created_at
       }));
     }
@@ -73,18 +87,20 @@
   const sendMessage = async () => {
     if (!newMessage.trim() || !currentUser) return;
 
-    const { error } = await supabase
-      .from('messages')
-      .insert([{
+    const { error } = await supabase.from('messages').insert([
+      {
         text: newMessage,
         sender_id: currentUser.id,
         receiver_id: recipientId
-      }]);
+      }
+    ]);
 
     if (!error) {
       newMessage = '';
       recipientId = null;
       fetchMessages();
+    } else {
+      console.error('Send message error:', error.message);
     }
   };
 
@@ -111,7 +127,7 @@
     return () => supabase.removeChannel(subscription);
   };
 
-  // Auto-scroll messages
+  // Auto-scroll whenever messages change
   $: if (messagesContainer) {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
@@ -132,9 +148,7 @@
     <select bind:value={recipientId} class="p-2 border rounded flex-1">
       <option value={null}>All</option>
       {#each users as u}
-        {#if u.id !== currentUser?.id}
-          <option value={u.id}>{u.email}</option>
-        {/if}
+        <option value={u.id}>{u.email || u.name}</option>
       {/each}
     </select>
   </div>
@@ -147,13 +161,15 @@
       <div class="text-center text-gray-500 italic">No messages yet</div>
     {:else}
       {#each messages as m}
-        <div class={`p-2 rounded max-w-[75%] ${
-          m.sender_email === currentUser?.email
-            ? 'bg-blue-100 self-end'
-            : m.receiver_email === 'All'
-            ? 'bg-green-100 self-start'
-            : 'bg-gray-100 self-start'
-        }`}>
+        <div
+          class={`p-2 rounded max-w-[75%] ${
+            m.sender_email === currentUser?.email
+              ? 'bg-blue-100 self-end'
+              : m.receiver_email === 'All'
+              ? 'bg-green-100 self-start'
+              : 'bg-gray-100 self-start'
+          }`}
+        >
           <span class="font-bold">{m.sender_email}</span>
           {m.receiver_email !== 'All' ? ` → ${m.receiver_email}` : ''}: {m.text}
           <div class="text-xs text-gray-500">{new Date(m.created_at).toLocaleTimeString()}</div>
