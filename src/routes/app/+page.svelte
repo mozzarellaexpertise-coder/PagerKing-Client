@@ -1,83 +1,117 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { supabase } from '$lib/supabaseClient';
-  import { getMessages, sendMessage, subscribeMessages } from '$lib/api';
 
+  type Profile = { id: string; email: string; name?: string };
   type Message = {
     id: string;
     text: string;
-    sender_email: string;
-    receiver_email: string | 'All';
     created_at: string;
+    sender: Profile;
+    receiver: Profile | null;
   };
 
+  let currentUser: Profile | null = null;
+  let users: Profile[] = [];
   let messages: Message[] = [];
   let newMessage = '';
   let recipientId: string | null = null;
-  let users: { id: string; email: string }[] = [];
-  let currentUser: { id: string; email: string } | null = null;
   let loading = true;
-  let sending = false;
   let messagesContainer: HTMLDivElement;
 
-  // Fetch logged-in user
-  const fetchCurrentUser = async () => {
+  // Fetch current logged-in profile
+  const fetchCurrentProfile = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) currentUser = { id: user.id, email: user.email };
+    if (!user) return;
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id,email,name')
+      .eq('id', user.id)
+      .single();
+
+    currentUser = profile;
   };
 
-  // Fetch all users for recipient dropdown
-  const fetchUsers = async () => {
-    const { data, error } = await supabase.from('users').select('id,email');
-    if (!error && data) users = data;
+  // Fetch all profiles for dropdown
+  const fetchProfiles = async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id,email,name');
+    if (!error && data) users = data.filter(u => u.id !== currentUser?.id);
   };
 
   // Fetch messages
-  const fetchAllMessages = async () => {
+  const fetchMessages = async () => {
     if (!currentUser) return;
-    messages = await getMessages();
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select(`
+        id,
+        text,
+        created_at,
+        sender:sender_id(id,email,name),
+        receiver:receiver_id(id,email,name)
+      `)
+      .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id},receiver_id.is.null`)
+      .order('created_at', { ascending: true });
+
+    if (!error && data) messages = data;
   };
 
-  // Send message
-  const handleSend = async () => {
-    if (!currentUser || !newMessage.trim()) return;
-    sending = true;
-    try {
-      await sendMessage(newMessage, currentUser.id, recipientId);
+  // Send a message
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !currentUser) return;
+
+    const { error } = await supabase.from('messages').insert([
+      {
+        text: newMessage,
+        sender_id: currentUser.id,
+        receiver_id: recipientId
+      }
+    ]);
+
+    if (!error) {
       newMessage = '';
       recipientId = null;
-      await fetchAllMessages();
-    } catch (err: any) {
-      console.error('Send failed:', err.message);
-    } finally {
-      sending = false;
+      fetchMessages();
     }
   };
 
   // Realtime subscription
-  const setupRealtime = () => {
-    subscribeMessages(supabase, async (msg) => {
-      // Only refresh UI for relevant messages
-      if (
-        msg.sender_id === currentUser?.id ||
-        msg.receiver_id === currentUser?.id ||
-        msg.receiver_id === null
-      ) {
-        await fetchAllMessages();
-      }
-    });
+  const subscribeRealtime = () => {
+    const subscription = supabase
+      .channel('public:messages')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        payload => {
+          const msg = payload.new;
+          if (
+            msg.sender_id === currentUser?.id ||
+            msg.receiver_id === currentUser?.id ||
+            msg.receiver_id === null
+          ) {
+            fetchMessages();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(subscription);
   };
 
-  // Auto-scroll
+  // Auto-scroll messages
   $: if (messagesContainer) {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
   onMount(async () => {
-    await fetchCurrentUser();
-    await fetchUsers();
-    await fetchAllMessages();
-    setupRealtime();
+    await fetchCurrentProfile();
+    await fetchProfiles();
+    await fetchMessages();
+    subscribeRealtime();
     loading = false;
   });
 </script>
@@ -89,9 +123,7 @@
     <select bind:value={recipientId} class="p-2 border rounded flex-1">
       <option value={null}>All</option>
       {#each users as u}
-        {#if u.id !== currentUser?.id}
-          <option value={u.id}>{u.email}</option>
-        {/if}
+        <option value={u.id}>{u.email}</option>
       {/each}
     </select>
   </div>
@@ -104,15 +136,17 @@
       <div class="text-center text-gray-500 italic">No messages yet</div>
     {:else}
       {#each messages as m}
-        <div class={`p-2 rounded max-w-[75%] ${
-          m.sender_email === currentUser?.email
-            ? 'bg-blue-100 self-end'
-            : m.receiver_email === 'All'
-            ? 'bg-green-100 self-start'
-            : 'bg-gray-100 self-start'
-        }`}>
-          <span class="font-bold">{m.sender_email}</span>
-          {m.receiver_email !== 'All' ? ` → ${m.receiver_email}` : ''}: {m.text}
+        <div
+          class={`p-2 rounded max-w-[75%] ${
+            m.sender.id === currentUser?.id
+              ? 'bg-blue-100 self-end'
+              : m.receiver === null
+              ? 'bg-green-100 self-start'
+              : 'bg-gray-100 self-start'
+          }`}
+        >
+          <span class="font-bold">{m.sender.email}</span>
+          {m.receiver ? ` → ${m.receiver.email}` : ''}: {m.text}
           <div class="text-xs text-gray-500">{new Date(m.created_at).toLocaleTimeString()}</div>
         </div>
       {/each}
@@ -126,11 +160,8 @@
       placeholder="Type your message..."
       bind:value={newMessage}
       class="flex-1 p-2 border rounded"
-      on:keydown={(e) => e.key === 'Enter' && handleSend()}
-      disabled={sending}
+      on:keydown={(e) => e.key === 'Enter' && sendMessage()}
     />
-    <button on:click={handleSend} class="bg-blue-600 text-white px-4 py-2 rounded" disabled={sending}>
-      {sending ? 'Sending…' : 'Send'}
-    </button>
+    <button on:click={sendMessage} class="bg-blue-600 text-white px-4 py-2 rounded">Send</button>
   </div>
 </div>
