@@ -1,12 +1,13 @@
 <script lang="ts">
-  import { supabase } from '$lib/supabaseClient';
   import { onMount } from 'svelte';
+  import { supabase } from '$lib/supabaseClient';
+  import { getMessages, sendMessage, subscribeMessages } from '$lib/api';
 
   type Message = {
     id: string;
+    text: string;
     sender_email: string;
     receiver_email: string | 'All';
-    text: string;
     created_at: string;
   };
 
@@ -15,8 +16,8 @@
   let recipientId: string | null = null;
   let users: { id: string; email: string }[] = [];
   let currentUser: { id: string; email: string } | null = null;
-
   let loading = true;
+  let sending = false;
   let messagesContainer: HTMLDivElement;
 
   // Fetch logged-in user
@@ -31,80 +32,43 @@
     if (!error && data) users = data;
   };
 
-  // Fetch messages relevant to current user
-  const fetchMessages = async () => {
+  // Fetch messages
+  const fetchAllMessages = async () => {
     if (!currentUser) return;
-
-    const { data, error } = await supabase
-      .from('messages')
-      .select(`
-        id,
-        text,
-        created_at,
-        sender_id,
-        receiver_id,
-        sender:sender_id ( email ),
-        receiver:receiver_id ( email )
-      `)
-      .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id},receiver_id.is.null`)
-      .order('created_at', { ascending: true });
-
-
-if (!error && data) {
-  messages = data.map(msg => ({
-    id: msg.id,
-    text: msg.text,
-    sender_email: msg.sender?.email ?? 'Unknown',
-    receiver_email: msg.receiver?.email ?? 'All',
-    created_at: msg.created_at
-  }));
-}
-  
+    messages = await getMessages();
+  };
 
   // Send message
-  const sendMessage = async () => {
-    if (!newMessage.trim()) return;
-    if (!currentUser) return;
-
-    const { error } = await supabase.from('messages').insert([
-      {
-        text: newMessage,
-        sender_id: currentUser.id,
-        receiver_id: recipientId
-      }
-    ]);
-
-    if (!error) {
+  const handleSend = async () => {
+    if (!currentUser || !newMessage.trim()) return;
+    sending = true;
+    try {
+      await sendMessage(newMessage, currentUser.id, recipientId);
       newMessage = '';
       recipientId = null;
-      fetchMessages();
+      await fetchAllMessages();
+    } catch (err: any) {
+      console.error('Send failed:', err.message);
+    } finally {
+      sending = false;
     }
   };
 
   // Realtime subscription
-  const subscribeRealtime = () => {
-    const subscription = supabase
-      .channel('public:messages')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages' },
-        payload => {
-          const msg = payload.new;
-          if (
-            msg.sender_id === currentUser?.id ||
-            msg.receiver_id === currentUser?.id ||
-            msg.receiver_id === null
-          ) {
-            fetchMessages();
-          }
-        }
-      )
-      .subscribe();
-
-    return () => supabase.removeChannel(subscription);
+  const setupRealtime = () => {
+    subscribeMessages(supabase, async (msg) => {
+      // Only refresh UI for relevant messages
+      if (
+        msg.sender_id === currentUser?.id ||
+        msg.receiver_id === currentUser?.id ||
+        msg.receiver_id === null
+      ) {
+        await fetchAllMessages();
+      }
+    });
   };
 
-  // Auto-scroll whenever messages change
+  // Auto-scroll
   $: if (messagesContainer) {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
@@ -112,8 +76,8 @@ if (!error && data) {
   onMount(async () => {
     await fetchCurrentUser();
     await fetchUsers();
-    await fetchMessages();
-    subscribeRealtime();
+    await fetchAllMessages();
+    setupRealtime();
     loading = false;
   });
 </script>
@@ -140,15 +104,13 @@ if (!error && data) {
       <div class="text-center text-gray-500 italic">No messages yet</div>
     {:else}
       {#each messages as m}
-        <div
-          class={`p-2 rounded max-w-[75%] ${
-            m.sender_email === currentUser?.email
-              ? 'bg-blue-100 self-end'
-              : m.receiver_email === 'All'
-              ? 'bg-green-100 self-start'
-              : 'bg-gray-100 self-start'
-          }`}
-        >
+        <div class={`p-2 rounded max-w-[75%] ${
+          m.sender_email === currentUser?.email
+            ? 'bg-blue-100 self-end'
+            : m.receiver_email === 'All'
+            ? 'bg-green-100 self-start'
+            : 'bg-gray-100 self-start'
+        }`}>
           <span class="font-bold">{m.sender_email}</span>
           {m.receiver_email !== 'All' ? ` → ${m.receiver_email}` : ''}: {m.text}
           <div class="text-xs text-gray-500">{new Date(m.created_at).toLocaleTimeString()}</div>
@@ -164,8 +126,11 @@ if (!error && data) {
       placeholder="Type your message..."
       bind:value={newMessage}
       class="flex-1 p-2 border rounded"
-      on:keydown={(e) => e.key === 'Enter' && sendMessage()}
+      on:keydown={(e) => e.key === 'Enter' && handleSend()}
+      disabled={sending}
     />
-    <button on:click={sendMessage} class="bg-blue-600 text-white px-4 py-2 rounded">Send</button>
+    <button on:click={handleSend} class="bg-blue-600 text-white px-4 py-2 rounded" disabled={sending}>
+      {sending ? 'Sending…' : 'Send'}
+    </button>
   </div>
 </div>
