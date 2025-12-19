@@ -3,7 +3,6 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
 
-  export let data;
   let userEmail: string | null = null;
 
   // Check session on mount
