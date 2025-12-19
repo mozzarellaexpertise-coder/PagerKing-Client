@@ -1,51 +1,75 @@
 <script lang="ts">
-  import { supabase } from '$lib/supabaseClient';
+  import { onMount } from 'svelte';
+  import { messages } from '$lib/stores/messages';
+  import { getMessages, sendMessage, getCurrentUser } from '$lib/api';
   import { goto } from '$app/navigation';
 
   let email = '';
   let password = '';
   let errorMsg = '';
+  let newMessage = '';
+  let receiver: string | null = null; // default to all
 
-  const handleLogin = async () => {
-    errorMsg = '';
+  let currentUser: any = null;
 
-    // sign in and let Supabase set the auth cookie
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
+  // LOGIN
+  async function handleLogin() {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { errorMsg = error.message; return; }
 
-    console.log('LOGIN RESULT', data, error);
+    // fetch current user after login
+    const userData = await getCurrentUser();
+    if (userData.ok) currentUser = userData.user;
 
-    if (error) {
-      errorMsg = error.message;
-      return;
+    await loadMessages();
+  }
+
+  // FETCH MESSAGES
+  async function loadMessages() {
+    const res = await getMessages();
+    if (res.ok) messages.set(res.data);
+  }
+
+  // SEND MESSAGE
+  async function handleSend() {
+    if (!newMessage.trim()) return;
+    const res = await sendMessage(receiver, newMessage);
+    if (res.ok) {
+      messages.update((m) => [...m, res.data]);
+      newMessage = '';
     }
+  }
 
-    // Optional: Confirm the session is set
-    if (!data.session) {
-      errorMsg = 'No session received';
-      return;
+  onMount(async () => {
+    const userData = await getCurrentUser();
+    if (userData.ok) {
+      currentUser = userData.user;
+      await loadMessages();
     }
-
-    // Now ensure profile exists
-    await supabase.from('profiles').upsert({
-      id: data.user.id,
-      email: data.user.email
-    });
-
-    // Redirect to the app
-    goto('/app');
-  };
+  });
 </script>
 
-<h1>Login</h1>
+{#if !currentUser}
+  <h2>Login</h2>
+  <input type="email" bind:value={email} placeholder="Email" />
+  <input type="password" bind:value={password} placeholder="Password" />
+  <button on:click={handleLogin}>Login</button>
+  <p>{errorMsg}</p>
+{:else}
+  <h2>Welcome, {currentUser.name}</h2>
 
-<input placeholder="Email" bind:value={email} />
-<input placeholder="Password" type="password" bind:value={password} />
+  <div>
+    <input type="text" bind:value={newMessage} placeholder="Type a message" />
+    <input type="text" bind:value={receiver} placeholder="Receiver email (leave empty for all)" />
+    <button on:click={handleSend}>Send</button>
+  </div>
 
-<button on:click={handleLogin}>Login</button>
-
-{#if errorMsg}
-  <p style="color:red">{errorMsg}</p>
+  <ul>
+    {#each $messages as msg}
+      <li>
+        <strong>{msg.sender_id}</strong> to <em>{msg.receiver_id || 'All'}</em>:
+        {msg.text} <small>({msg.created_at})</small>
+      </li>
+    {/each}
+  </ul>
 {/if}

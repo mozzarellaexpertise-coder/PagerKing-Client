@@ -1,49 +1,21 @@
 const BASE_URL = import.meta.env.VITE_API_URL;
 
 export async function getMessages() {
-  const res = await fetch(`${BASE_URL}/api/messages`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to fetch messages');
-
-  // Map sender and receiver emails for frontend
-  return data.data.map((msg: any) => ({
-    id: msg.id,
-    text: msg.text,
-    sender_email: msg.sender?.email ?? 'Unknown',
-    receiver_email: msg.receiver?.email ?? 'All',
-    created_at: msg.created_at
-  }));
+  const res = await fetch(`${BASE_URL}/messages`, { credentials: 'include' });
+  return res.json();
 }
 
-export async function sendMessage(
-  text: string,
-  sender_id: string,
-  receiver_id?: string | null
-) {
-  if (!text.trim()) throw new Error('Message cannot be empty');
-  if (!sender_id) throw new Error('Sender ID is required');
-
-  const res = await fetch(`${BASE_URL}/api/messages`, {
+export async function sendMessage(receiver_id: string | null, text: string) {
+  const res = await fetch(`${BASE_URL}/messages`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      text,
-      sender_id,
-      receiver_id: receiver_id ?? null
-    })
+    body: JSON.stringify({ receiver_id, text })
   });
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to send message');
-  return data.data;
+  return res.json();
 }
 
-// Realtime subscription for UI updates (no inserts!)
-export function subscribeMessages(supabaseClient: any, callback: (msg: any) => void) {
-  return supabaseClient
-    .from('messages')
-    .on('INSERT', payload => {
-      callback(payload.new);
-    })
-    .subscribe();
+export async function getCurrentUser() {
+  const res = await fetch(`${BASE_URL}/currentUser`, { credentials: 'include' });
+  return res.json();
 }
