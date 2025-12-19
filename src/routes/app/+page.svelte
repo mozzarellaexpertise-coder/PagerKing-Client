@@ -185,8 +185,16 @@
 </div>
 
 <style>
-  /* Optional: smooth scrolling */
-  div[bind\\:this] {
-    scroll-behavior: smooth;
+<div bind:this={messagesContainer} class="messages-container flex flex-col gap-2 max-h-[60vh] overflow-y-auto border p-2 rounded bg-gray-50">
+  .messages-container {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
+  .messages-container::-webkit-scrollbar {
+    width: 8px;
+  }
+  .messages-container::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1;
+    border-radius: 4px;
   }
 </style>
