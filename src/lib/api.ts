@@ -18,11 +18,3 @@ export async function getCurrentUser() {
 
   return res.json();
 }
-
-export async function getMessages() {
-  const res = await fetch(`${API_BASE}/messages`, {
-    credentials: 'include'
-  });
-
-  return res.json();
-}
