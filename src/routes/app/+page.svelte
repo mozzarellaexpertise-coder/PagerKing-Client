@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { supabase } from '$lib/supabaseClient';
   import { onMount } from 'svelte';
+  import { supabase } from '$lib/supabaseClient';
 
   type Message = {
     id: string;
-    sender_email: string;
-    receiver_email: string | 'All';
+    sender_name: string;
+    receiver_name: string | 'All';
     text: string;
     created_at: string;
   };
@@ -13,36 +13,36 @@
   let messages: Message[] = [];
   let newMessage = '';
   let recipientId: string | null = null;
-  let users: { id: string; email: string }[] = [];
-  let currentUser: { id: string; email: string } | null = null;
+  let users: { id: string; name: string }[] = [];
+  let currentUser: { id: string; name: string } | null = null;
 
   let loading = true;
   let messagesContainer: HTMLDivElement;
 
-  // Fetch logged-in user and ensure profile exists
+  // Fetch current user from server
   const fetchCurrentUser = async () => {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (!user || userError) return;
+    const res = await fetch('/api/currentUser');
+    const data = await res.json();
 
-    // Check if profile exists
+    if (!data.ok || !data.user) return;
+
+    currentUser = data.user;
+
+    // Ensure profile exists in Supabase
     const { data: profile } = await supabase
       .from('profiles')
       .select('id,name')
-      .eq('id', user.id)
+      .eq('id', currentUser.id)
       .single();
 
-    // If no profile, create it
     if (!profile) {
       const { data: newProfile, error: insertError } = await supabase
         .from('profiles')
-        .insert([{ id: user.id, name: user.email }])
+        .insert([{ id: currentUser.id, name: currentUser.name }])
         .select()
         .single();
 
       if (insertError) console.error('Failed to create profile:', insertError.message);
-      currentUser = { id: newProfile.id, email: user.email };
-    } else {
-      currentUser = { id: profile.id, email: user.email };
     }
   };
 
@@ -51,7 +51,10 @@
     const { data, error } = await supabase
       .from('profiles')
       .select('id,name');
-    if (!error && data) users = data.filter(u => u.id !== currentUser?.id);
+
+    if (!error && data) {
+      users = data.filter(u => u.id !== currentUser?.id);
+    }
   };
 
   // Fetch messages relevant to current user
@@ -64,10 +67,8 @@
         id,
         text,
         created_at,
-        sender_id,
-        receiver_id,
-        sender:sender_id ( name ),
-        receiver:receiver_id ( name )
+        sender:sender_id ( id, name ),
+        receiver:receiver_id ( id, name )
       `)
       .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id},receiver_id.is.null`)
       .order('created_at', { ascending: true });
@@ -76,8 +77,8 @@
       messages = data.map((msg: any) => ({
         id: msg.id,
         text: msg.text,
-        sender_email: msg.sender?.name || 'Unknown',
-        receiver_email: msg.receiver?.name || 'All',
+        sender_name: msg.sender?.name || 'Unknown',
+        receiver_name: msg.receiver?.name || 'All',
         created_at: msg.created_at
       }));
     }
@@ -148,7 +149,7 @@
     <select bind:value={recipientId} class="p-2 border rounded flex-1">
       <option value={null}>All</option>
       {#each users as u}
-        <option value={u.id}>{u.email || u.name}</option>
+        <option value={u.id}>{u.name}</option>
       {/each}
     </select>
   </div>
@@ -163,15 +164,15 @@
       {#each messages as m}
         <div
           class={`p-2 rounded max-w-[75%] ${
-            m.sender_email === currentUser?.email
+            m.sender_name === currentUser?.name
               ? 'bg-blue-100 self-end'
-              : m.receiver_email === 'All'
+              : m.receiver_name === 'All'
               ? 'bg-green-100 self-start'
               : 'bg-gray-100 self-start'
           }`}
         >
-          <span class="font-bold">{m.sender_email}</span>
-          {m.receiver_email !== 'All' ? ` → ${m.receiver_email}` : ''}: {m.text}
+          <span class="font-bold">{m.sender_name}</span>
+          {m.receiver_name !== 'All' ? ` → ${m.receiver_name}` : ''}: {m.text}
           <div class="text-xs text-gray-500">{new Date(m.created_at).toLocaleTimeString()}</div>
         </div>
       {/each}
