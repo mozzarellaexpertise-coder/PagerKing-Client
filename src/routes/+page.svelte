@@ -9,6 +9,7 @@
   const handleLogin = async () => {
     errorMsg = '';
 
+    // sign in and let Supabase set the auth cookie
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password
@@ -21,12 +22,19 @@
       return;
     }
 
-    // ensure profile exists
+    // Optional: Confirm the session is set
+    if (!data.session) {
+      errorMsg = 'No session received';
+      return;
+    }
+
+    // Now ensure profile exists
     await supabase.from('profiles').upsert({
       id: data.user.id,
       email: data.user.email
     });
 
+    // Redirect to the app
     goto('/app');
   };
 </script>
