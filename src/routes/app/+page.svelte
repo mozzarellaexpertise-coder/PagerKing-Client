@@ -1,47 +1,69 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getCurrentUser, getIncomingMessage, sendMessage, getUsers } from '$lib/api';
+  import {
+    getCurrentUser,
+    getIncomingMessage,
+    sendMessage,
+    getUsers
+  } from '$lib/api';
   import { goto } from '$app/navigation';
 
-  // -------------------- USER STATE --------------------
+  // -------------------- User State --------------------
   let user: { id: string; email: string } | null = null;
   let loading = true;
 
-  // -------------------- MESSAGES --------------------
-  let incomingMessages: {
-    sender_email: string;
-    receiver_email: string;
-    text: string;
-    created_at: string;
-  }[] = [];
-
+  // -------------------- Messages State --------------------
+  let incomingMessages: any[] = [];
   let outgoing = '';
   let sending = false;
   let error = '';
 
-  // -------------------- USERS DROPDOWN --------------------
+  // Track acknowledged messages to stop beep
+  const acknowledgedMessages = new Set<string>();
+
+  // -------------------- Users Dropdown --------------------
   let users: { id: string; email: string }[] = [];
   let selectedReceiver = 'All';
 
-  // -------------------- POLLING --------------------
+  // -------------------- Polling Control --------------------
   let interval: NodeJS.Timer;
   let fetchingIncoming = false;
 
-  // -------------------- FETCH USERS --------------------
+  // -------------------- Beeper --------------------
+  let beepAudio: HTMLAudioElement | null = null;
+  let beepInterval: any = null;
+
+  function playBeeper() {
+    if (!beepAudio) beepAudio = new Audio('/sounds/beep.mp3');
+    if (beepInterval) return; // already beeping
+
+    beepInterval = setInterval(() => {
+      beepAudio!.play().catch(err => console.warn('Beeper play failed:', err));
+    }, 2000); // beep every 2s
+  }
+
+  function stopBeeper() {
+    if (beepInterval) {
+      clearInterval(beepInterval);
+      beepInterval = null;
+    }
+  }
+
+  // -------------------- Fetch Users --------------------
   const fetchUsers = async () => {
     try {
-      const usersRes = await getUsers();
-      if (usersRes.ok) {
-        users = usersRes.users
-          .filter(u => u.email !== user?.email)
-          .sort((a, b) => a.email.localeCompare(b.email));
+      if (!user) return;
+      const res = await getUsers();
+      if (res.ok) {
+        // Exclude logged-in user
+        users = res.users.filter(u => u.email !== user.email);
       }
     } catch (err) {
       console.error('Failed to fetch users:', err);
     }
   };
 
-  // -------------------- FETCH MESSAGES --------------------
+  // -------------------- Fetch Incoming Messages --------------------
   const fetchIncoming = async () => {
     if (!user || fetchingIncoming) return;
     fetchingIncoming = true;
@@ -49,21 +71,14 @@
     try {
       const res = await getIncomingMessage();
       if (res.ok && Array.isArray(res.messages)) {
-        let allMessages = res.messages;
+        incomingMessages = res.messages;
 
-        // Filter by selectedReceiver
-        if (selectedReceiver !== 'All') {
-          allMessages = allMessages.filter(
-            msg =>
-              (msg.sender_email === selectedReceiver && msg.receiver_email === user.email) ||
-              (msg.sender_email === user.email && msg.receiver_email === selectedReceiver)
-          );
-        }
-
-        // Sort descending by created_at
-        incomingMessages = allMessages.sort((a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
+        // Trigger beep for unacknowledged messages
+        incomingMessages.forEach(msg => {
+          if (!acknowledgedMessages.has(msg.id) && (msg.receiver_email === user.email || msg.receiver_email === 'All')) {
+            playBeeper();
+          }
+        });
       } else {
         incomingMessages = [];
       }
@@ -75,7 +90,7 @@
     }
   };
 
-  // -------------------- SEND MESSAGE --------------------
+  // -------------------- Send Outgoing Message --------------------
   const handleSend = async () => {
     if (!outgoing.trim() || sending || !user) return;
 
@@ -98,9 +113,10 @@
     }
   };
 
-  // -------------------- AUTH + INITIAL LOAD --------------------
+  // -------------------- Auth + Polling + Users --------------------
   onMount(async () => {
     loading = true;
+
     try {
       const res = await getCurrentUser();
       if (!res.ok) {
@@ -112,13 +128,10 @@
 
       user = res.user;
 
-      // Fetch users
       await fetchUsers();
-
-      // Initial fetch messages
       await fetchIncoming();
 
-      // Polling every 3s
+      // Poll every 3s
       interval = setInterval(fetchIncoming, 3000);
     } catch (err) {
       console.error('Error during mount:', err);
@@ -130,12 +143,13 @@
 
   onDestroy(() => {
     clearInterval(interval);
+    stopBeeper();
   });
 
-  // -------------------- HELPER --------------------
-  const formatMessageTime = (timestamp: string) => {
-    const d = new Date(timestamp);
-    return d.toLocaleString();
+  // -------------------- Acknowledge Message --------------------
+  const acknowledgeMessage = (id: string) => {
+    acknowledgedMessages.add(id);
+    stopBeeper();
   };
 </script>
 
@@ -147,51 +161,53 @@
   {:else if user}
     <p class="mb-4 text-gray-700">Welcome {user.email}</p>
 
-    <!-- USERS DROPDOWN -->
-    <div class="w-full max-w-md mb-4">
-      <label class="block mb-1 font-semibold">Filter by user</label>
-      <select class="w-full border rounded p-2" bind:value={selectedReceiver} on:change={fetchIncoming}>
-        <option value="All">All (Broadcast)</option>
-        {#each users as u}
-          <option value={u.email}>{u.email}</option>
-        {/each}
-      </select>
-    </div>
-
-    <!-- INCOMING MESSAGES -->
+    <!-- Incoming Messages -->
     <div class="w-full max-w-md bg-white border rounded p-4 shadow mb-4 overflow-y-auto h-64">
       <h2 class="font-semibold mb-2">Messages</h2>
       {#if incomingMessages.length === 0}
         <p class="text-gray-500">No messages yet.</p>
       {:else}
-        {#each incomingMessages as msg}
-          <div class="mb-2 p-2 rounded border-b border-gray-200">
-            <p class="text-sm text-gray-500">
-              <strong>{msg.sender_email}</strong> → <strong>{msg.receiver_email}</strong>
-            </p>
+        {#each incomingMessages.filter(msg => msg.sender_email === selectedReceiver || selectedReceiver === 'All') as msg}
+          <div
+            class="mb-2 p-2 rounded border-b border-gray-200 cursor-pointer hover:bg-gray-50"
+            on:click={() => acknowledgeMessage(msg.id)}
+          >
+            <p class="text-sm text-gray-500">{msg.sender_email} → {msg.receiver_email}</p>
             <p>{msg.text}</p>
-            <p class="text-xs text-gray-400">{formatMessageTime(msg.created_at)}</p>
+            <p class="text-xs text-gray-400">{new Date(msg.created_at).toLocaleString()}</p>
           </div>
         {/each}
       {/if}
     </div>
 
-    <!-- OUTGOING MESSAGE -->
+    <!-- Outgoing Message -->
     <div class="w-full max-w-md bg-white border rounded p-4 shadow">
       <h2 class="font-semibold mb-2">Send Message</h2>
+
+      <!-- Receiver Select -->
+      <label class="block mb-1 font-semibold">Send to</label>
+      <select class="w-full border rounded p-2 mb-2" bind:value={selectedReceiver}>
+        <option value="All">All (Broadcast)</option>
+        {#each users as u}
+          <option value={u.email}>{u.email}</option>
+        {/each}
+      </select>
+
       <textarea
         class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none mb-2"
         rows="3"
         bind:value={outgoing}
         placeholder="Type your message..."
       ></textarea>
+
       {#if error}
         <p class="text-red-600 mb-2 text-sm">{error}</p>
       {/if}
+
       <button
         class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded disabled:bg-blue-300"
         on:click={handleSend}
-        disabled={sending || selectedReceiver === 'All'}
+        disabled={sending}
       >
         {sending ? 'Sending...' : 'Send'}
       </button>
