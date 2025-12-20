@@ -3,69 +3,82 @@
   import { getCurrentUser, getIncomingMessage, sendMessage } from '$lib/api';
   import { goto } from '$app/navigation';
 
+  // User state
   let user: { id: string; email: string } | null = null;
   let loading = true;
 
-  // Messaging state
+  // Messages state
   let incoming = '';
   let outgoing = '';
   let sending = false;
   let error = '';
 
+  // Polling control
   let interval: NodeJS.Timer;
+  let fetchingIncoming = false;
 
   // Fetch incoming message safely
   const fetchIncoming = async () => {
-    if (!user) return;
+    if (!user || fetchingIncoming) return;
+    fetchingIncoming = true;
     try {
       const res = await getIncomingMessage(user.email);
-      if (res.ok) incoming = res.message || '';
+      if (res.ok) {
+        incoming = res.message || '';
+      } else {
+        console.warn('Incoming fetch failed:', res.error);
+        // optional: stop polling to prevent flooding
+        // clearInterval(interval);
+      }
     } catch (err) {
       console.error('Fetch incoming message error:', err);
+      // optional: stop polling on persistent errors
+      // clearInterval(interval);
+    } finally {
+      fetchingIncoming = false;
     }
   };
 
   // Send outgoing message
   const handleSend = async () => {
-    if (!outgoing.trim()) return;
+    if (!outgoing.trim() || sending || !user) return;
     sending = true;
     error = '';
     try {
-      const res = await sendMessage(user!.email, outgoing);
+      const res = await sendMessage(user.email, outgoing);
       if (!res.ok) {
         error = res.error || 'Failed to send message';
       } else {
         outgoing = '';
-        await fetchIncoming(); // refresh after send
+        await fetchIncoming(); // refresh incoming after send
       }
     } catch (err) {
-      console.error(err);
+      console.error('Send message error:', err);
       error = 'Send error';
     } finally {
       sending = false;
     }
   };
 
-  // Mount logic: fetch user, start polling
+  // Auth + polling setup
   onMount(async () => {
     loading = true;
     try {
       const res = await getCurrentUser();
 
       if (!res.ok) {
-        // Auth failed → clear tokens and redirect
         localStorage.removeItem('sb-access-token');
         localStorage.removeItem('sb-refresh-token');
         await goto('/login', { replaceState: true });
-        return; // STOP further execution
+        return; // stop execution
       }
 
       user = res.user;
 
-      // Fetch first incoming message after user is valid
+      // Initial fetch
       await fetchIncoming();
 
-      // Start polling incoming messages every 3s
+      // Start polling every 3s
       interval = setInterval(fetchIncoming, 3000);
 
     } catch (err) {
@@ -89,7 +102,7 @@
   {:else if user}
     <p class="mb-4 text-gray-700">Welcome {user.email}</p>
 
-    <!-- Incoming message -->
+    <!-- Incoming Message -->
     <div class="w-full max-w-md bg-white border rounded p-4 shadow mb-4">
       <h2 class="font-semibold mb-2">Incoming Message</h2>
       <div class="border p-2 rounded min-h-[60px] bg-gray-100">
@@ -97,7 +110,7 @@
       </div>
     </div>
 
-    <!-- Outgoing message -->
+    <!-- Outgoing Message -->
     <div class="w-full max-w-md bg-white border rounded p-4 shadow">
       <h2 class="font-semibold mb-2">Send Message</h2>
       <textarea
