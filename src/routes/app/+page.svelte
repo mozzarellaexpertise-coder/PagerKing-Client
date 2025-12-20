@@ -8,7 +8,7 @@
   let loading = true;
 
   // Messages state
-  let incoming = '';
+  let incomingMessages: { sender: string; receiver: string; text: string; created_at: string }[] = [];
   let outgoing = '';
   let sending = false;
   let error = '';
@@ -17,23 +17,20 @@
   let interval: NodeJS.Timer;
   let fetchingIncoming = false;
 
-  // Fetch incoming message safely
+  // Fetch incoming messages safely
   const fetchIncoming = async () => {
     if (!user || fetchingIncoming) return;
     fetchingIncoming = true;
+
     try {
-      const res = await getIncomingMessage(user.email);
+      const res = await getIncomingMessage();
       if (res.ok) {
-        incoming = res.message || '';
+        incomingMessages = res.messages;
       } else {
         console.warn('Incoming fetch failed:', res.error);
-        // optional: stop polling to prevent flooding
-        // clearInterval(interval);
       }
     } catch (err) {
       console.error('Fetch incoming message error:', err);
-      // optional: stop polling on persistent errors
-      // clearInterval(interval);
     } finally {
       fetchingIncoming = false;
     }
@@ -44,13 +41,14 @@
     if (!outgoing.trim() || sending || !user) return;
     sending = true;
     error = '';
+
     try {
-      const res = await sendMessage(user.email, outgoing);
+      const res = await sendMessage('All', outgoing); // sending to All for now
       if (!res.ok) {
         error = res.error || 'Failed to send message';
       } else {
         outgoing = '';
-        await fetchIncoming(); // refresh incoming after send
+        await fetchIncoming(); // refresh messages after sending
       }
     } catch (err) {
       console.error('Send message error:', err);
@@ -65,12 +63,11 @@
     loading = true;
     try {
       const res = await getCurrentUser();
-
       if (!res.ok) {
         localStorage.removeItem('sb-access-token');
         localStorage.removeItem('sb-refresh-token');
         await goto('/login', { replaceState: true });
-        return; // stop execution
+        return;
       }
 
       user = res.user;
@@ -102,12 +99,20 @@
   {:else if user}
     <p class="mb-4 text-gray-700">Welcome {user.email}</p>
 
-    <!-- Incoming Message -->
-    <div class="w-full max-w-md bg-white border rounded p-4 shadow mb-4">
-      <h2 class="font-semibold mb-2">Incoming Message</h2>
-      <div class="border p-2 rounded min-h-[60px] bg-gray-100">
-        {incoming || 'No messages yet.'}
-      </div>
+    <!-- Incoming Messages -->
+    <div class="w-full max-w-md bg-white border rounded p-4 shadow mb-4 overflow-y-auto h-64">
+      <h2 class="font-semibold mb-2">Messages</h2>
+      {#if incomingMessages.length === 0}
+        <p class="text-gray-500">No messages yet.</p>
+      {:else}
+        {#each incomingMessages as msg}
+          <div class="mb-2 p-2 rounded border-b border-gray-200">
+            <p class="text-sm text-gray-500">{msg.sender} → {msg.receiver}</p>
+            <p>{msg.text}</p>
+            <p class="text-xs text-gray-400">{new Date(msg.created_at).toLocaleString()}</p>
+          </div>
+        {/each}
+      {/if}
     </div>
 
     <!-- Outgoing Message -->
