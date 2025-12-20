@@ -1,75 +1,24 @@
 import { supabase } from '$lib/supabaseClient';
-
 const BASE_URL = 'https://pagerking.vercel.app/api';
 
-/* =========================
-   AUTH HEADER HELPER
-========================= */
+// -------------------- TOKEN HELPER --------------------
+async function getToken() {
+  const sessionRes = await supabase.auth.getSession();
+  const token = sessionRes.data?.session?.access_token;
+  if (token) return token;
+  return localStorage.getItem('sb-access-token');
+}
+
 async function getAuthHeaders() {
-  const { data, error } = await supabase.auth.getSession();
-
-  if (error || !data.session) {
-    return { 'Content-Type': 'application/json' };
-  }
-
+  const token = await getToken();
+  if (!token) return { 'Content-Type': 'application/json' };
   return {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${data.session.access_token}`
+    Authorization: `Bearer ${token}`
   };
 }
 
-/* =========================
-   CURRENT USER
-========================= */
-export async function getCurrentUser() {
-  // 🔥 Get token from localStorage
-  const token = localStorage.getItem('sb-access-token');
-  if (!token) return { ok: false };
-
-  const res = await fetch('https://pagerking.vercel.app/api/currentUser', {
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
-  });
-
-  if (!res.ok) return { ok: false };
-
-  const { user } = await res.json();
-  return { ok: true, user };
-}
-
-export async function getIncomingMessage(email: string) {
-  const token = localStorage.getItem('sb-access-token');
-  if (!token) return { ok: false };
-
-  const res = await fetch(`https://pagerking.vercel.app/api/getIncomingMessage?email=${encodeURIComponent(email)}`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-
-  if (!res.ok) return { ok: false };
-  return await res.json();
-}
-
-// Send new outgoing message
-export async function sendMessage(receiver: string, text: string) {
-  const token = localStorage.getItem('sb-access-token');
-  if (!token) return { ok: false };
-
-  const res = await fetch(`https://pagerking.vercel.app/api/sendMessage`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ receiver, text })
-  });
-
-  if (!res.ok) return { ok: false };
-  return await res.json();
-}
-/* =========================
-   LOGIN (CLIENT → SERVER)
-========================= */
+// -------------------- LOGIN --------------------
 export async function login(email: string, password: string) {
   const res = await fetch(`${BASE_URL}/login`, {
     method: 'POST',
@@ -77,9 +26,46 @@ export async function login(email: string, password: string) {
     body: JSON.stringify({ email, password })
   });
 
-  if (!res.ok) {
-    throw new Error('Login failed');
+  if (!res.ok) throw new Error('Login failed');
+
+  const data = await res.json();
+  const token = data?.session?.access_token;
+  const refreshToken = data?.session?.refresh_token;
+
+  if (token) {
+    localStorage.setItem('sb-access-token', token);
+    localStorage.setItem('sb-refresh-token', refreshToken || '');
   }
 
+  return data;
+}
+
+// -------------------- CURRENT USER --------------------
+export async function getCurrentUser() {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${BASE_URL}/currentUser`, { headers });
+
+  if (!res.ok) return { ok: false };
+  const { user } = await res.json();
+  return { ok: true, user };
+}
+
+// -------------------- INCOMING MESSAGE --------------------
+export async function getIncomingMessage() {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${BASE_URL}/testMessages`, { headers });
+  if (!res.ok) return { ok: false };
+  return res.json();
+}
+
+// -------------------- SEND MESSAGE --------------------
+export async function sendMessage(receiver: string, text: string) {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${BASE_URL}/sendMessage`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ receiver, text })
+  });
+  if (!res.ok) return { ok: false };
   return res.json();
 }
