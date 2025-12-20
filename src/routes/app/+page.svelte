@@ -33,15 +33,15 @@
       const usersRes = await getUsers();
       if (usersRes.ok) {
         users = usersRes.users
-          .filter(u => u.email !== user?.email) // exclude self
-          .sort((a, b) => a.email.localeCompare(b.email)); // alphabetical
+          .filter(u => u.email !== user?.email)
+          .sort((a, b) => a.email.localeCompare(b.email));
       }
     } catch (err) {
       console.error('Failed to fetch users:', err);
     }
   };
 
-  // -------------------- FETCH INCOMING MESSAGES --------------------
+  // -------------------- FETCH MESSAGES --------------------
   const fetchIncoming = async () => {
     if (!user || fetchingIncoming) return;
     fetchingIncoming = true;
@@ -49,7 +49,21 @@
     try {
       const res = await getIncomingMessage();
       if (res.ok && Array.isArray(res.messages)) {
-        incomingMessages = res.messages;
+        let allMessages = res.messages;
+
+        // Filter by selectedReceiver
+        if (selectedReceiver !== 'All') {
+          allMessages = allMessages.filter(
+            msg =>
+              (msg.sender_email === selectedReceiver && msg.receiver_email === user.email) ||
+              (msg.sender_email === user.email && msg.receiver_email === selectedReceiver)
+          );
+        }
+
+        // Sort descending by created_at
+        incomingMessages = allMessages.sort((a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
       } else {
         incomingMessages = [];
       }
@@ -74,7 +88,7 @@
         error = res.error || 'Failed to send message';
       } else {
         outgoing = '';
-        await fetchIncoming(); // refresh messages
+        await fetchIncoming();
       }
     } catch (err) {
       console.error('Send message error:', err);
@@ -98,10 +112,10 @@
 
       user = res.user;
 
-      // Fetch users for dropdown
+      // Fetch users
       await fetchUsers();
 
-      // Initial fetch of messages
+      // Initial fetch messages
       await fetchIncoming();
 
       // Polling every 3s
@@ -118,7 +132,7 @@
     clearInterval(interval);
   });
 
-  // -------------------- HELPER: FORMAT MESSAGE --------------------
+  // -------------------- HELPER --------------------
   const formatMessageTime = (timestamp: string) => {
     const d = new Date(timestamp);
     return d.toLocaleString();
@@ -133,7 +147,18 @@
   {:else if user}
     <p class="mb-4 text-gray-700">Welcome {user.email}</p>
 
-    <!-- Incoming Messages -->
+    <!-- USERS DROPDOWN -->
+    <div class="w-full max-w-md mb-4">
+      <label class="block mb-1 font-semibold">Filter by user</label>
+      <select class="w-full border rounded p-2" bind:value={selectedReceiver} on:change={fetchIncoming}>
+        <option value="All">All (Broadcast)</option>
+        {#each users as u}
+          <option value={u.email}>{u.email}</option>
+        {/each}
+      </select>
+    </div>
+
+    <!-- INCOMING MESSAGES -->
     <div class="w-full max-w-md bg-white border rounded p-4 shadow mb-4 overflow-y-auto h-64">
       <h2 class="font-semibold mb-2">Messages</h2>
       {#if incomingMessages.length === 0}
@@ -151,34 +176,22 @@
       {/if}
     </div>
 
-    <!-- Outgoing Message -->
+    <!-- OUTGOING MESSAGE -->
     <div class="w-full max-w-md bg-white border rounded p-4 shadow">
       <h2 class="font-semibold mb-2">Send Message</h2>
-
-      <!-- Receiver Select -->
-      <label class="block mb-1 font-semibold">Send to</label>
-      <select class="w-full border rounded p-2 mb-2" bind:value={selectedReceiver}>
-        <option value="All">All (Broadcast)</option>
-        {#each users as u}
-          <option value={u.email}>{u.email}</option>
-        {/each}
-      </select>
-
       <textarea
         class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none mb-2"
         rows="3"
         bind:value={outgoing}
         placeholder="Type your message..."
       ></textarea>
-
       {#if error}
         <p class="text-red-600 mb-2 text-sm">{error}</p>
       {/if}
-
       <button
         class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded disabled:bg-blue-300"
         on:click={handleSend}
-        disabled={sending}
+        disabled={sending || selectedReceiver === 'All'}
       >
         {sending ? 'Sending...' : 'Send'}
       </button>
