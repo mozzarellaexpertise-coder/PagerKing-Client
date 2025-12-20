@@ -8,7 +8,7 @@
   let loading = true;
 
   // Messages state
-  let incomingMessages: { sender: string; receiver: string; text: string; created_at: string }[] = [];
+  let incomingMessages: any[] = [];
   let outgoing = '';
   let sending = false;
   let error = '';
