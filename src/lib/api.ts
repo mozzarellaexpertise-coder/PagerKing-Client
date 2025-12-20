@@ -37,6 +37,36 @@ export async function getCurrentUser() {
   const { user } = await res.json();
   return { ok: true, user };
 }
+
+export async function getIncomingMessage(email: string) {
+  const token = localStorage.getItem('sb-access-token');
+  if (!token) return { ok: false };
+
+  const res = await fetch(`https://pagerking.vercel.app/api/getIncomingMessage?email=${encodeURIComponent(email)}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  if (!res.ok) return { ok: false };
+  return await res.json();
+}
+
+// Send new outgoing message
+export async function sendMessage(receiver: string, text: string) {
+  const token = localStorage.getItem('sb-access-token');
+  if (!token) return { ok: false };
+
+  const res = await fetch(`https://pagerking.vercel.app/api/sendMessage`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ receiver, text })
+  });
+
+  if (!res.ok) return { ok: false };
+  return await res.json();
+}
 /* =========================
    LOGIN (CLIENT → SERVER)
 ========================= */

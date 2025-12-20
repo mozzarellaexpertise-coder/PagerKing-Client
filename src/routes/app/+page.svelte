@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { getCurrentUser, getIncomingMessage, sendMessage } from '$lib/api';
-
   import { goto } from '$app/navigation';
 
   let user: { id: string; email: string } | null = null;
@@ -13,6 +12,9 @@
   let sending = false;
   let error = '';
 
+  let interval: NodeJS.Timer;
+
+  // Fetch authenticated user
   const fetchUser = async () => {
     const res = await getCurrentUser();
     if (!res.ok) {
@@ -24,12 +26,18 @@
     user = res.user;
   };
 
+  // Fetch latest incoming message
   const fetchIncoming = async () => {
     if (!user) return;
-    const res = await getIncomingMessage(user.email);
-    if (res.ok) incoming = res.message || '';
+    try {
+      const res = await getIncomingMessage(user.email);
+      if (res.ok) incoming = res.message || '';
+    } catch (err) {
+      console.error('Fetch incoming message error:', err);
+    }
   };
 
+  // Send outgoing message
   const handleSend = async () => {
     if (!outgoing.trim()) return;
     sending = true;
@@ -39,8 +47,8 @@
       if (!res.ok) {
         error = res.error || 'Failed to send message';
       } else {
-        // Optional: clear input after send
         outgoing = '';
+        await fetchIncoming(); // Optional: refresh after sending
       }
     } catch (err) {
       console.error(err);
@@ -52,8 +60,16 @@
 
   onMount(async () => {
     await fetchUser();
-    if (user) await fetchIncoming();
+    if (user) {
+      await fetchIncoming();
+      // 🔄 Start polling incoming messages every 3 seconds
+      interval = setInterval(fetchIncoming, 3000);
+    }
     loading = false;
+  });
+
+  onDestroy(() => {
+    clearInterval(interval);
   });
 </script>
 
@@ -65,6 +81,7 @@
   {:else if user}
     <p class="mb-4 text-gray-700">Welcome {user.email}</p>
 
+    <!-- Incoming message -->
     <div class="w-full max-w-md bg-white border rounded p-4 shadow mb-4">
       <h2 class="font-semibold mb-2">Incoming Message</h2>
       <div class="border p-2 rounded min-h-[60px] bg-gray-100">
@@ -72,6 +89,7 @@
       </div>
     </div>
 
+    <!-- Outgoing message -->
     <div class="w-full max-w-md bg-white border rounded p-4 shadow">
       <h2 class="font-semibold mb-2">Send Message</h2>
       <textarea
