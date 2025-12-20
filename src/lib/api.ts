@@ -50,6 +50,29 @@ export async function getCurrentUser() {
   return { ok: true, user };
 }
 
+//-------------------- USERS LIST --------------------
+export async function getUsers() {
+  const token = localStorage.getItem('sb-access-token');
+  if (!token) return { ok: false, users: [] };
+
+  const res = await fetch(
+    'https://pagerking.vercel.app/api/users',
+    {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    }
+  );
+
+  if (!res.ok) return { ok: false, users: [] };
+
+  const json = await res.json();
+  return {
+    ok: json.ok,
+    users: Array.isArray(json.users) ? json.users : []
+  };
+}
+
 // -------------------- INCOMING MESSAGE --------------------
 export async function getIncomingMessage() {
   const token = localStorage.getItem('sb-access-token');

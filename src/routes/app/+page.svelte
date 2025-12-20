@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getCurrentUser, getIncomingMessage, sendMessage } from '$lib/api';
+  import {
+    getCurrentUser,
+    getIncomingMessage,
+    sendMessage,
+    getUsers
+  } from '$lib/api';
   import { goto } from '$app/navigation';
 
   // User state
@@ -13,24 +18,29 @@
   let sending = false;
   let error = '';
 
+  // Users dropdown
+  let users: { email: string }[] = [];
+  let selectedReceiver = 'All';
+
   // Polling control
   let interval: NodeJS.Timer;
   let fetchingIncoming = false;
 
-  // Fetch incoming messages safely
+  // Fetch incoming messages
   const fetchIncoming = async () => {
     if (!user || fetchingIncoming) return;
     fetchingIncoming = true;
 
     try {
       const res = await getIncomingMessage();
-      if (res.ok) {
+      if (res.ok && Array.isArray(res.messages)) {
         incomingMessages = res.messages;
       } else {
-        console.warn('Incoming fetch failed:', res.error);
+        incomingMessages = [];
       }
     } catch (err) {
       console.error('Fetch incoming message error:', err);
+      incomingMessages = [];
     } finally {
       fetchingIncoming = false;
     }
@@ -39,16 +49,17 @@
   // Send outgoing message
   const handleSend = async () => {
     if (!outgoing.trim() || sending || !user) return;
+
     sending = true;
     error = '';
 
     try {
-      const res = await sendMessage('All', outgoing); // sending to All for now
+      const res = await sendMessage(selectedReceiver, outgoing);
       if (!res.ok) {
         error = res.error || 'Failed to send message';
       } else {
         outgoing = '';
-        await fetchIncoming(); // refresh messages after sending
+        await fetchIncoming();
       }
     } catch (err) {
       console.error('Send message error:', err);
@@ -58,9 +69,10 @@
     }
   };
 
-  // Auth + polling setup
+  // Auth + polling + users
   onMount(async () => {
     loading = true;
+
     try {
       const res = await getCurrentUser();
       if (!res.ok) {
@@ -72,14 +84,17 @@
 
       user = res.user;
 
-      // Initial fetch
-      await fetchIncoming();
+      // Load users for dropdown
+      const usersRes = await getUsers();
+      if (usersRes.ok) {
+        users = usersRes.users;
+      }
 
-      // Start polling every 3s
+      await fetchIncoming();
       interval = setInterval(fetchIncoming, 3000);
 
     } catch (err) {
-      console.error('Error fetching current user:', err);
+      console.error('Error during mount:', err);
       await goto('/login', { replaceState: true });
     } finally {
       loading = false;
@@ -118,6 +133,18 @@
     <!-- Outgoing Message -->
     <div class="w-full max-w-md bg-white border rounded p-4 shadow">
       <h2 class="font-semibold mb-2">Send Message</h2>
+      <!-- Receiver Select -->
+<label class="block mb-1 font-semibold">Send to</label>
+<select
+  class="w-full border rounded p-2 mb-2"
+  bind:value={selectedReceiver}
+>
+  <option value="All">All</option>
+
+  {#each users as u}
+    <option value={u.email}>{u.email}</option>
+  {/each}
+</select>
       <textarea
         class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none mb-2"
         rows="3"
