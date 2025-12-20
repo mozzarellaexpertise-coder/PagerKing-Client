@@ -7,40 +7,37 @@
   let error = '';
   let loading = false;
 
-  const doLogin = async () => {
-    if (!email || !password) {
-      error = 'Please enter both email and password';
-      return;
-    }
+const doLogin = async () => {
+  if (!email || !password) {
+    error = 'Please enter both email and password';
+    return;
+  }
 
-    error = '';
-    loading = true;
+  error = '';
+  loading = true;
 
-    try {
-      const res = await login(email, password);
+  try {
+    const res = await login(email, password);
 
-      // Check if the server returned the session correctly
-      if (res.ok && res.session?.access_token) {
-        // 1. Store the JWT for the Bearer token auth we set up in lib/api.ts
-        localStorage.setItem('sb-access-token', res.session.access_token);
-        
-        // 2. Store the refresh token so we can stay logged in later
-        if (res.session.refresh_token) {
-          localStorage.setItem('sb-refresh-token', res.session.refresh_token);
-        }
-
-        // 3. Move to the protected app area
-        goto('/app');
-      } else {
-        error = res.error || 'Login failed. Please check your credentials.';
+    if (res.ok && res.session?.access_token) {
+      // Store tokens
+      localStorage.setItem('sb-access-token', res.session.access_token);
+      if (res.session.refresh_token) {
+        localStorage.setItem('sb-refresh-token', res.session.refresh_token);
       }
-    } catch (err) {
-      console.error('Login error:', err);
-      error = 'Could not connect to the server. Check your internet or API URL.';
-    } finally {
-      loading = false;
+
+      // 🔥 Wait for goto to complete
+      await goto('/app', { replaceState: true });
+    } else {
+      error = res.error || 'Login failed. Please check your credentials.';
     }
-  };
+  } catch (err) {
+    console.error('Login error:', err);
+    error = 'Could not connect to the server. Check your internet or API URL.';
+  } finally {
+    loading = false;
+  }
+};
 </script>
 
 <div class="min-h-screen flex items-center justify-center bg-gray-50 px-4">
