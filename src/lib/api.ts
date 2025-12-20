@@ -1,10 +1,23 @@
 const BASE_URL = 'https://pagerking.vercel.app/api';
 
 function getAuthHeaders() {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('sb-access-token') : null;
+    if (typeof window === 'undefined') {
+        return { 'Content-Type': 'application/json' };
+    }
+
+    const key = Object.keys(localStorage).find(k =>
+        k.startsWith('sb-') && k.endsWith('-auth-token')
+    );
+
+    if (!key) {
+        return { 'Content-Type': 'application/json' };
+    }
+
+    const session = JSON.parse(localStorage.getItem(key)!);
+
     return {
         'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        'Authorization': `Bearer ${session.access_token}`
     };
 }
 
