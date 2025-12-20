@@ -14,19 +14,7 @@
 
   let interval: NodeJS.Timer;
 
-  // Fetch authenticated user
-  const fetchUser = async () => {
-    const res = await getCurrentUser();
-    if (!res.ok) {
-      localStorage.removeItem('sb-access-token');
-      localStorage.removeItem('sb-refresh-token');
-      await goto('/login', { replaceState: true });
-      return;
-    }
-    user = res.user;
-  };
-
-  // Fetch latest incoming message
+  // Fetch incoming message safely
   const fetchIncoming = async () => {
     if (!user) return;
     try {
@@ -48,7 +36,7 @@
         error = res.error || 'Failed to send message';
       } else {
         outgoing = '';
-        await fetchIncoming(); // Optional: refresh after sending
+        await fetchIncoming(); // refresh after send
       }
     } catch (err) {
       console.error(err);
@@ -58,14 +46,34 @@
     }
   };
 
+  // Mount logic: fetch user, start polling
   onMount(async () => {
-    await fetchUser();
-    if (user) {
+    loading = true;
+    try {
+      const res = await getCurrentUser();
+
+      if (!res.ok) {
+        // Auth failed → clear tokens and redirect
+        localStorage.removeItem('sb-access-token');
+        localStorage.removeItem('sb-refresh-token');
+        await goto('/login', { replaceState: true });
+        return; // STOP further execution
+      }
+
+      user = res.user;
+
+      // Fetch first incoming message after user is valid
       await fetchIncoming();
-      // 🔄 Start polling incoming messages every 3 seconds
+
+      // Start polling incoming messages every 3s
       interval = setInterval(fetchIncoming, 3000);
+
+    } catch (err) {
+      console.error('Error fetching current user:', err);
+      await goto('/login', { replaceState: true });
+    } finally {
+      loading = false;
     }
-    loading = false;
   });
 
   onDestroy(() => {
