@@ -22,16 +22,20 @@ async function getAuthHeaders() {
    CURRENT USER
 ========================= */
 export async function getCurrentUser() {
-  const headers = await getAuthHeaders();
-  const res = await fetch(`${BASE_URL}/currentUser`, { headers });
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { ok: false };
 
-  if (!res.ok) {
-    throw new Error(`Unauthorized (${res.status})`);
-  }
+  const res = await fetch('https://pagerking.vercel.app/api/currentUser', {
+    headers: {
+      Authorization: `Bearer ${session.access_token}`
+    }
+  });
 
-  return res.json();
+  if (!res.ok) return { ok: false };
+
+  const { user } = await res.json();
+  return { ok: true, user };
 }
-
 /* =========================
    LOGIN (CLIENT → SERVER)
 ========================= */
