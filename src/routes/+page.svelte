@@ -1,18 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { browser } from '$app/environment';
 
-  // WRONG: This runs on the server and causes the 500 crash
-  // goto('/login'); 
-
-  // RIGHT: This only runs once the page is in the browser
   onMount(() => {
-    goto('/login');
+    goto('/login', { replaceState: true });
   });
-
-  // OR USE AN IF-CHECK:
-  // if (browser) {
-  //   goto('/login');
-  // }
 </script>
+
+<div class="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+  <h1 class="text-4xl font-bold text-gray-800">PagerKing 🦏</h1>
+  <p class="text-gray-500 mt-2">Redirecting to login...</p>
+</div>

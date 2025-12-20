@@ -7,37 +7,37 @@
   let error = '';
   let loading = false;
 
-const doLogin = async () => {
-  if (!email || !password) {
-    error = 'Please enter both email and password';
-    return;
-  }
-
-  error = '';
-  loading = true;
-
-  try {
-    const res = await login(email, password);
-
-    if (res.ok && res.session?.access_token) {
-      // Store tokens
-      localStorage.setItem('sb-access-token', res.session.access_token);
-      if (res.session.refresh_token) {
-        localStorage.setItem('sb-refresh-token', res.session.refresh_token);
-      }
-
-      // 🔥 Wait for goto to complete
-      await goto('/app', { replaceState: true });
-    } else {
-      error = res.error || 'Login failed. Please check your credentials.';
+  const doLogin = async () => {
+    if (!email || !password) {
+      error = 'Please enter both email and password';
+      return;
     }
-  } catch (err) {
-    console.error('Login error:', err);
-    error = 'Could not connect to the server. Check your internet or API URL.';
-  } finally {
-    loading = false;
-  }
-};
+
+    error = '';
+    loading = true;
+
+    try {
+      const res = await login(email, password);
+
+      if (res.ok && res.session?.access_token) {
+        // Store tokens in localStorage
+        localStorage.setItem('sb-access-token', res.session.access_token);
+        if (res.session.refresh_token) {
+          localStorage.setItem('sb-refresh-token', res.session.refresh_token);
+        }
+
+        // Redirect to /app
+        await goto('/app', { replaceState: true });
+      } else {
+        error = res.error || 'Login failed. Check your credentials.';
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      error = 'Could not connect to the server. Check your internet or API URL.';
+    } finally {
+      loading = false;
+    }
+  };
 </script>
 
 <div class="min-h-screen flex items-center justify-center bg-gray-50 px-4">
@@ -70,8 +70,8 @@ const doLogin = async () => {
         <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
         <input
           id="password"
-          class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
           type="password"
+          class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
           placeholder="••••••••"
           bind:value={password}
           disabled={loading}
@@ -86,10 +86,6 @@ const doLogin = async () => {
       >
         {loading ? 'Signing in...' : 'Login'}
       </button>
-    </div>
-
-    <div class="mt-6 text-center text-sm text-gray-500">
-      <p>Deploying to: <span class="font-mono text-xs">pager-king-client.vercel.app</span></p>
     </div>
   </div>
 </div>
