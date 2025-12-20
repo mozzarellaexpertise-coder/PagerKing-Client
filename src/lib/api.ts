@@ -52,10 +52,23 @@ export async function getCurrentUser() {
 
 // -------------------- INCOMING MESSAGE --------------------
 export async function getIncomingMessage() {
-  const headers = await getAuthHeaders();
-  const res = await fetch(`${BASE_URL}/testMessages`, { headers });
-  if (!res.ok) return { ok: false };
-  return res.json();
+  const token = localStorage.getItem('sb-access-token');
+  if (!token) return { ok: false, messages: [] };
+
+  const res = await fetch(
+    `https://pagerking.vercel.app/api/getIncomingMessage`,
+    {
+      headers: { Authorization: `Bearer ${token}` }
+    }
+  );
+
+  if (!res.ok) return { ok: false, messages: [] };
+
+  const json = await res.json();
+  return {
+    ok: json.ok,
+    messages: json.messages ?? []   // 🔒 SAFETY NET
+  };
 }
 
 // -------------------- SEND MESSAGE --------------------
