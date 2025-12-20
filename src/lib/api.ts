@@ -22,12 +22,13 @@ async function getAuthHeaders() {
    CURRENT USER
 ========================= */
 export async function getCurrentUser() {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return { ok: false };
+  // 🔥 Get token from localStorage
+  const token = localStorage.getItem('sb-access-token');
+  if (!token) return { ok: false };
 
   const res = await fetch('https://pagerking.vercel.app/api/currentUser', {
     headers: {
-      Authorization: `Bearer ${session.access_token}`
+      Authorization: `Bearer ${token}`
     }
   });
 
