@@ -1,32 +1,47 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import {
-    getCurrentUser,
-    getIncomingMessage,
-    sendMessage,
-    getUsers
-  } from '$lib/api';
+  import { getCurrentUser, getIncomingMessage, sendMessage, getUsers } from '$lib/api';
   import { goto } from '$app/navigation';
 
-  // User state
+  // -------------------- USER STATE --------------------
   let user: { id: string; email: string } | null = null;
   let loading = true;
 
-  // Messages state
-  let incomingMessages: any[] = [];
+  // -------------------- MESSAGES --------------------
+  let incomingMessages: {
+    sender_email: string;
+    receiver_email: string;
+    text: string;
+    created_at: string;
+  }[] = [];
+
   let outgoing = '';
   let sending = false;
   let error = '';
 
-  // Users dropdown
-  let users: { email: string }[] = [];
+  // -------------------- USERS DROPDOWN --------------------
+  let users: { id: string; email: string }[] = [];
   let selectedReceiver = 'All';
 
-  // Polling control
+  // -------------------- POLLING --------------------
   let interval: NodeJS.Timer;
   let fetchingIncoming = false;
 
-  // Fetch incoming messages
+  // -------------------- FETCH USERS --------------------
+  const fetchUsers = async () => {
+    try {
+      const usersRes = await getUsers();
+      if (usersRes.ok) {
+        users = usersRes.users
+          .filter(u => u.email !== user?.email) // exclude self
+          .sort((a, b) => a.email.localeCompare(b.email)); // alphabetical
+      }
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
+    }
+  };
+
+  // -------------------- FETCH INCOMING MESSAGES --------------------
   const fetchIncoming = async () => {
     if (!user || fetchingIncoming) return;
     fetchingIncoming = true;
@@ -46,7 +61,7 @@
     }
   };
 
-  // Send outgoing message
+  // -------------------- SEND MESSAGE --------------------
   const handleSend = async () => {
     if (!outgoing.trim() || sending || !user) return;
 
@@ -59,7 +74,7 @@
         error = res.error || 'Failed to send message';
       } else {
         outgoing = '';
-        await fetchIncoming();
+        await fetchIncoming(); // refresh messages
       }
     } catch (err) {
       console.error('Send message error:', err);
@@ -69,10 +84,9 @@
     }
   };
 
-  // Auth + polling + users
+  // -------------------- AUTH + INITIAL LOAD --------------------
   onMount(async () => {
     loading = true;
-
     try {
       const res = await getCurrentUser();
       if (!res.ok) {
@@ -84,15 +98,14 @@
 
       user = res.user;
 
-      // Load users for dropdown
-      const usersRes = await getUsers();
-      if (usersRes.ok) {
-        users = usersRes.users;
-      }
+      // Fetch users for dropdown
+      await fetchUsers();
 
+      // Initial fetch of messages
       await fetchIncoming();
-      interval = setInterval(fetchIncoming, 3000);
 
+      // Polling every 3s
+      interval = setInterval(fetchIncoming, 3000);
     } catch (err) {
       console.error('Error during mount:', err);
       await goto('/login', { replaceState: true });
@@ -104,6 +117,12 @@
   onDestroy(() => {
     clearInterval(interval);
   });
+
+  // -------------------- HELPER: FORMAT MESSAGE --------------------
+  const formatMessageTime = (timestamp: string) => {
+    const d = new Date(timestamp);
+    return d.toLocaleString();
+  };
 </script>
 
 <div class="min-h-screen flex flex-col items-center bg-gray-50 p-4">
@@ -122,9 +141,11 @@
       {:else}
         {#each incomingMessages as msg}
           <div class="mb-2 p-2 rounded border-b border-gray-200">
-            <p class="text-sm text-gray-500">{msg.sender} → {msg.receiver}</p>
+            <p class="text-sm text-gray-500">
+              <strong>{msg.sender_email}</strong> → <strong>{msg.receiver_email}</strong>
+            </p>
             <p>{msg.text}</p>
-            <p class="text-xs text-gray-400">{new Date(msg.created_at).toLocaleString()}</p>
+            <p class="text-xs text-gray-400">{formatMessageTime(msg.created_at)}</p>
           </div>
         {/each}
       {/if}
@@ -133,27 +154,27 @@
     <!-- Outgoing Message -->
     <div class="w-full max-w-md bg-white border rounded p-4 shadow">
       <h2 class="font-semibold mb-2">Send Message</h2>
-      <!-- Receiver Select -->
-<label class="block mb-1 font-semibold">Send to</label>
-<select
-  class="w-full border rounded p-2 mb-2"
-  bind:value={selectedReceiver}
->
-  <option value="All">All</option>
 
-  {#each users as u}
-    <option value={u.email}>{u.email}</option>
-  {/each}
-</select>
+      <!-- Receiver Select -->
+      <label class="block mb-1 font-semibold">Send to</label>
+      <select class="w-full border rounded p-2 mb-2" bind:value={selectedReceiver}>
+        <option value="All">All (Broadcast)</option>
+        {#each users as u}
+          <option value={u.email}>{u.email}</option>
+        {/each}
+      </select>
+
       <textarea
         class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none mb-2"
         rows="3"
         bind:value={outgoing}
         placeholder="Type your message..."
       ></textarea>
+
       {#if error}
         <p class="text-red-600 mb-2 text-sm">{error}</p>
       {/if}
+
       <button
         class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded disabled:bg-blue-300"
         on:click={handleSend}
